@@ -69,6 +69,7 @@
       border: 2px solid #333;
       transition: background 0.3s;
       overflow: hidden;
+      touch-action: manipulation;
     }
     .cloud {
       position: absolute;
@@ -143,6 +144,12 @@
         8px -8px green;
       transition: background 0.3s, box-shadow 0.3s;
     }
+
+    @media (hover: none) and (pointer: coarse) {
+      #introScreen p {
+        display: none;
+      }
+    }
   </style>
 </head>
 <body>
@@ -211,6 +218,20 @@
     let cactusSpeed = 5, gameStart = 0, cactusX = 800;
     let colorReversed = false, lastColorFlip = 0, gameRunning = false;
     let username = '';
+
+    // Load username from localStorage if exists
+    window.onload = () => {
+      const savedUsername = localStorage.getItem('bobGameUsername');
+      if (savedUsername) {
+        username = savedUsername;
+        usernameInput.value = username;
+        usernameInput.disabled = true;
+        startBtn.disabled = true;
+        intro.style.display = 'none';
+        playerNameDisplay.textContent = `Player: ${username}`;
+        startGame();
+      }
+    };
 
     usernameInput.addEventListener('input', () => {
       startBtn.disabled = usernameInput.value.trim() === '';
@@ -412,6 +433,14 @@
       requestAnimationFrame(updateFrame);
     }
 
+    function startGame() {
+      gameStart = Date.now();
+      gameRunning = true;
+      setupScene();
+      loadLeaderboard();
+      requestAnimationFrame(updateFrame);
+    }
+
     document.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && jumpStart === null && gameRunning) {
         jumpStart = Date.now();
@@ -426,6 +455,13 @@
       }
     });
 
+    // Mobile tap to jump (full power)
+    game.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!gameRunning || isJumping) return;
+      jump(1);
+    });
+
     startBtn.addEventListener('click', async () => {
       if (username) return; // already started
       const inputName = usernameInput.value.trim();
@@ -435,15 +471,12 @@
       if (!available) return;  // Username taken, stop here
 
       username = inputName;
+      localStorage.setItem('bobGameUsername', username);  // LOCK username locally
       intro.style.display = 'none';
       playerNameDisplay.textContent = `Player: ${username}`;
       usernameInput.disabled = true;
       startBtn.disabled = true;
-      gameStart = Date.now();
-      gameRunning = true;
-      setupScene();
-      loadLeaderboard();
-      requestAnimationFrame(updateFrame);
+      startGame();
     });
 
     restartBtn.addEventListener('click', () => {
