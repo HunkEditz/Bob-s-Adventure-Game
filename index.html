@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Bob's Adventure Multiplayer with Locked Username</title>
+  <title>Bob's Adventure Game</title>
   <style>
-    /* Your existing styles */
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background: #f7f7f7;
@@ -109,6 +108,36 @@
       padding-left: 0;
       list-style-position: inside;
     }
+    #updateLog {
+      text-align: center;
+      margin-top: 12px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #updateLogList {
+      list-style-position: inside;
+      padding-left: 0;
+      margin-top: 8px;
+      display: none; /* hidden by default, toggled by button */
+    }
+    #updateLogButton {
+      padding: 8px 12px;
+      margin-top: 8px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: none;
+      background: lightgreen;
+      color: #000;
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      transition: background-color 0.3s;
+    }
+    #updateLogButton:hover {
+      background-color: #90ee90;
+    }
     #bob {
       position: absolute;
       bottom: 0;
@@ -150,6 +179,42 @@
         display: none;
       }
     }
+    #updateLogModal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+    }
+
+    #modalContent {
+      background: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      max-width: 400px;
+      width: 90%;
+      color: #222;
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
+      text-align: center;
+    }
+
+    #modalContent h2 {
+      margin-top: 0;
+      margin-bottom: 15px;
+    }
+
+    #modalContent button {
+      margin-top: 20px;
+      padding: 8px 16px;
+      cursor: pointer;
+      border: none;
+      background-color: #4caf50;
+      color: white;
+      border-radius: 5px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
@@ -169,16 +234,40 @@
   <div id="game"></div>
 
   <div id="scoreboard">
-    Score: <span id="score">0</span>
+    Score: <span id="score">0</span> | High Score: <span id="highScore">0</span>
   </div>
 
   <div id="leaderboard">
-    <h3>🏆 Leaderboard</h3>
+    <h3>🏆 Leaderboard (Top 10)</h3>
     <ol id="leaderboardList"></ol>
+  </div>
+
+  <div id="updateLog">
+    <button id="updateLogButton">📜 Show Update Log</button>
+    <ul id="updateLogList">
+      <li>v1.3 - Update Log toggle button & High Score display</li>
+      <li>v1.2 - Added Top 10 Leaderboard & Update Log</li>
+      <li>v1.1 - Color reverse every 750 points</li>
+      <li>v1.0 - Initial release with jump power mechanic</li>
+    </ul>
   </div>
 
   <div style="text-align:center;">
     <button id="restartButton">Restart</button>
+  </div>
+
+  <!-- Modal for Update Log -->
+  <div id="updateLogModal">
+    <div id="modalContent">
+      <h2>Update Log</h2>
+      <ul id="modalUpdateLogList">
+        <li>v1.3 - Update Log toggle button & High Score display</li>
+        <li>v1.2 - Added Top 10 Leaderboard & Update Log</li>
+        <li>v1.1 - Color reverse every 750 points</li>
+        <li>v1.0 - Initial release with jump power mechanic</li>
+      </ul>
+      <button id="closeModalBtn">Close</button>
+    </div>
   </div>
 
   <!-- Firebase SDKs -->
@@ -187,6 +276,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
   <script>
+    // Firebase config & init
     const firebaseConfig = {
       apiKey: "AIzaSyBRj8lE9GbcpOciO2A0ZqAlqCU-_gm0bDs",
       authDomain: "bob-s-adventure-c1713.firebaseapp.com",
@@ -203,40 +293,68 @@
   </script>
 
   <script>
+    // Elements
     const game = document.getElementById('game');
     const scoreSpan = document.getElementById('score');
+    const highScoreSpan = document.getElementById('highScore');
     const intro = document.getElementById('introScreen');
     const startBtn = document.getElementById('startButton');
     const restartBtn = document.getElementById('restartButton');
     const usernameInput = document.getElementById('usernameInput');
     const playerNameDisplay = document.getElementById('playerNameDisplay');
     const leaderboardList = document.getElementById('leaderboardList');
+    const updateLogButton = document.getElementById('updateLogButton');
+    const updateLogModal = document.getElementById('updateLogModal');
+    const closeModalBtn = document.getElementById('closeModalBtn');
 
     let score = 0;
+    let highScore = 0;
     let bob, cactus;
-    let isJumping = false, jumpStart = null;
+    let isJumping = false;
     let cactusSpeed = 5, gameStart = 0, cactusX = 800;
     let colorReversed = false, lastColorFlip = 0, gameRunning = false;
     let username = '';
 
-    // Load username from localStorage if exists
-    window.onload = () => {
-      const savedUsername = localStorage.getItem('bobGameUsername');
-      if (savedUsername) {
-        username = savedUsername;
+    // Check if username stored in localStorage and auto-start game
+    function checkStoredUser() {
+      const storedUser = localStorage.getItem('bobGameUsername');
+      if (storedUser) {
+        username = storedUser;
         usernameInput.value = username;
         usernameInput.disabled = true;
         startBtn.disabled = true;
-        intro.style.display = 'none';
         playerNameDisplay.textContent = `Player: ${username}`;
-        startGame();
-      }
-    };
+        intro.style.display = 'none';
 
+        // Load personal high score
+        highScore = parseInt(localStorage.getItem(`highscore_${username}`)) || 0;
+        highScoreSpan.textContent = highScore;
+
+        // Setup and start game automatically
+        setupScene();
+        score = 0;
+        scoreSpan.textContent = 0;
+        gameStart = Date.now();
+        cactusX = 800;
+        restartBtn.style.display = 'none';
+        gameRunning = true;
+        requestAnimationFrame(updateFrame);
+      } else {
+        usernameInput.disabled = false;
+        startBtn.disabled = true;
+        playerNameDisplay.textContent = '';
+        intro.style.display = 'flex';
+      }
+    }
+
+    // Enable start button only if username input not empty and input not disabled
     usernameInput.addEventListener('input', () => {
-      startBtn.disabled = usernameInput.value.trim() === '';
+      if (!usernameInput.disabled) {
+        startBtn.disabled = usernameInput.value.trim() === '';
+      }
     });
 
+    // Setup game scene (bob, cactus, clouds)
     function setupScene() {
       game.innerHTML = '';
       bob = document.createElement('div');
@@ -246,7 +364,7 @@
 
       cactus = document.createElement('div');
       cactus.id = 'cactus';
-      cactus.style.right = '0px';
+      cactus.style.right = (Math.random() * 400) + 'px';
       game.appendChild(cactus);
 
       for (let i = 0; i < 4; i++) spawnCloud();
@@ -286,6 +404,7 @@
       }, 20);
     }
 
+    // Main game loop update
     function updateFrame() {
       if (!gameRunning) return;
 
@@ -294,12 +413,19 @@
       score++;
       scoreSpan.textContent = score;
 
+      if (score > highScore) {
+        highScoreSpan.textContent = score;
+      } else {
+        highScoreSpan.textContent = highScore;
+      }
+
       cactusX -= cactusSpeed;
       if (cactusX < -40) cactusX = 800;
       cactus.style.right = (800 - cactusX) + 'px';
 
       document.querySelectorAll('.cloud').forEach(c => {
-        let x = parseFloat(c.style.transform.match(/translateX\((.*)px/)[1]) - cactusSpeed * 0.3;
+        const m = c.style.transform.match(/translateX\((.*)px/);
+        let x = (m ? parseFloat(m[1]) : 800) - cactusSpeed * 0.3;
         c.style.transform = `translateX(${x}px)`;
         if (x < -100) {
           c.remove();
@@ -345,10 +471,52 @@
 
     function toggleColors() {
       colorReversed = !colorReversed;
+
+      const setTextColors = (color) => {
+        const textElements = [
+          '#scoreboard',
+          '#score',
+          '#highScore',
+          '#playerNameDisplay',
+          '#leaderboard',
+          '#leaderboardList',
+          '#updateLogButton',
+          '#updateLogList',
+          '#restartButton',
+          '#introScreen',
+        ];
+        textElements.forEach(selector => {
+          const el = document.querySelector(selector);
+          if (el) el.style.color = color;
+        });
+      };
+
       if (colorReversed) {
         document.body.style.background = '#000';
-        game.style.background = '#fff';
-        document.getElementById('scoreboard').style.color = '#fff';
+        game.style.background = '#222';
+        setTextColors('#fff');
+
+        bob.style.background = '#fff';
+        bob.style.boxShadow = `
+          8px 0 #fff,
+          16px 0 #fff,
+          0 -8px #fff,
+          0 -16px #fff,
+          8px -8px #fff,
+          -8px 0 #fff,
+          -8px -8px #fff
+        `;
+
+        cactus.style.background = '#90ee90';
+        cactus.style.boxShadow = `
+          8px 0 #90ee90,
+          -8px 0 #90ee90,
+          0 -8px #90ee90,
+          0 -16px #90ee90,
+          -8px -8px #90ee90,
+          8px -8px #90ee90
+        `;
+
         document.querySelectorAll('.cloud').forEach(c => {
           c.style.background = 'rgba(200, 200, 200, 0.9)';
           c.style.boxShadow = '10px 10px 10px rgba(255, 255, 255, 0.15)';
@@ -356,132 +524,170 @@
       } else {
         document.body.style.background = '#f7f7f7';
         game.style.background = '#fff';
-        document.getElementById('scoreboard').style.color = '#000';
+        setTextColors('#000');
+
+        bob.style.background = 'black';
+        bob.style.boxShadow = `
+          8px 0 black,
+          16px 0 black,
+          0 -8px black,
+          0 -16px black,
+          8px -8px black,
+          -8px 0 black,
+          -8px -8px black
+        `;
+
+        cactus.style.background = 'green';
+        cactus.style.boxShadow = `
+          8px 0 green,
+          -8px 0 green,
+          0 -8px green,
+          0 -16px green,
+          -8px -8px green,
+          8px -8px green
+        `;
+
         document.querySelectorAll('.cloud').forEach(c => {
           c.style.background = 'rgba(255,255,255,0.9)';
-          c.style.boxShadow = '10px 10px 10px rgba(0, 0, 0, 0.1)';
+          c.style.boxShadow = '10px 10px 10px rgba(0,0,0,0.1)';
         });
       }
     }
 
-    async function checkAndRegisterUsername(name) {
-      const userRef = db.collection('users').doc(name);
-      const doc = await userRef.get();
+    // Game over logic
+    function gameOver() {
+  gameRunning = false;
 
-      if (doc.exists) {
-        alert('This username is already taken. Please choose another one.');
-        return false;
-      } else {
-        await userRef.set({ bestScore: 0 });
-        return true;
-      }
-    }
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem(`highscore_${username}`, highScore);
+  }
 
-    async function updateBestScore(name, newScore) {
-      const userRef = db.collection('users').doc(name);
-      const doc = await userRef.get();
-      if (doc.exists) {
-        const data = doc.data();
-        if (newScore > data.bestScore) {
-          await userRef.update({ bestScore: newScore });
-        }
-      }
-    }
+  updateLeaderboard(username, score);
+  playerNameDisplay.textContent = `Game Over! Score: ${score}`;
 
-    function loadLeaderboard() {
-      db.collection("users")
-        .orderBy("bestScore", "desc")
-        .limit(5)
-        .get()
-        .then((querySnapshot) => {
-          leaderboardList.innerHTML = '';
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            const name = doc.id;
-            const li = document.createElement('li');
-            li.textContent = `${name}: ${data.bestScore}`;
-            leaderboardList.appendChild(li);
-          });
-        })
-        .catch((error) => {
-          console.error("Error loading leaderboard: ", error);
-        });
-    }
+  setTimeout(() => {
+    // Reset colors to normal
+    resetColorsToNormal();
 
-    async function gameOver() {
-      gameRunning = false;
-      await updateBestScore(username, score);
-      alert('Game Over! Your score: ' + score);
-      restartBtn.style.display = 'inline-block';
-      loadLeaderboard();
-    }
+    // Reset game variables
+    score = 0;
+    scoreSpan.textContent = '0';
+    restartBtn.style.display = 'none';
+    setupScene();
+    gameStart = Date.now();
+    cactusX = 800;
+    gameRunning = true;
+    playerNameDisplay.textContent = `Player: ${username}`;
+    requestAnimationFrame(updateFrame);
+  }, 1500);
+}
 
-    function restartGame() {
-      score = 0;
-      scoreSpan.textContent = score;
-      cactusX = 800;
-      cactusSpeed = 5;
-      gameStart = Date.now();
-      lastColorFlip = 0;
-      colorReversed = false;
-      gameRunning = true;
-      document.body.style.background = '#f7f7f7';
-      game.style.background = '#fff';
-      document.getElementById('scoreboard').style.color = '#000';
-      restartBtn.style.display = 'none';
-      setupScene();
-      requestAnimationFrame(updateFrame);
-    }
-
-    function startGame() {
-      gameStart = Date.now();
-      gameRunning = true;
-      setupScene();
-      loadLeaderboard();
-      requestAnimationFrame(updateFrame);
-    }
-
-    document.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && jumpStart === null && gameRunning) {
-        jumpStart = Date.now();
-      }
-    });
-
-    document.addEventListener('keyup', (e) => {
-      if (e.code === 'Space' && jumpStart !== null && gameRunning) {
-        const held = Date.now() - jumpStart;
-        jumpStart = null;
-        jump(Math.min(held / 300, 1));
-      }
-    });
-
-    // Mobile tap to jump (full power)
-    game.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      if (!gameRunning || isJumping) return;
-      jump(1);
-    });
-
-    startBtn.addEventListener('click', async () => {
-      if (username) return; // already started
-      const inputName = usernameInput.value.trim();
-      if (!inputName) return;
-
-      const available = await checkAndRegisterUsername(inputName);
-      if (!available) return;  // Username taken, stop here
-
-      username = inputName;
-      localStorage.setItem('bobGameUsername', username);  // LOCK username locally
-      intro.style.display = 'none';
-      playerNameDisplay.textContent = `Player: ${username}`;
-      usernameInput.disabled = true;
-      startBtn.disabled = true;
-      startGame();
-    });
+function resetColorsToNormal() {
+  if (colorReversed) {
+    toggleColors();
+  }
+}
 
     restartBtn.addEventListener('click', () => {
-      restartGame();
+      restartBtn.style.display = 'none';
+      setupScene();
+      score = 0;
+      scoreSpan.textContent = 0;
+      gameStart = Date.now();
+      cactusX = 800;
+      gameRunning = true;
+      requestAnimationFrame(updateFrame);
     });
+
+    // Start game button click handler
+    startBtn.addEventListener('click', () => {
+      username = usernameInput.value.trim();
+      if (!username) return;
+
+      localStorage.setItem('bobGameUsername', username);
+      usernameInput.disabled = true;
+      startBtn.disabled = true;
+      playerNameDisplay.textContent = `Player: ${username}`;
+
+      highScore = parseInt(localStorage.getItem(`highscore_${username}`)) || 0;
+      highScoreSpan.textContent = highScore;
+
+      intro.style.display = 'none';
+
+      setupScene();
+      score = 0;
+      scoreSpan.textContent = 0;
+      gameStart = Date.now();
+      cactusX = 800;
+      restartBtn.style.display = 'none';
+      gameRunning = true;
+      requestAnimationFrame(updateFrame);
+    });
+
+    // Jump on space key (hold duration changes jump power)
+    let spaceDownTime = 0;
+    document.body.addEventListener('keydown', e => {
+      if (e.code === 'Space' && !isJumping && gameRunning) {
+        if (spaceDownTime === 0) spaceDownTime = Date.now();
+      }
+    });
+    document.body.addEventListener('keyup', e => {
+      if (e.code === 'Space' && gameRunning) {
+        if (spaceDownTime) {
+          let holdDuration = (Date.now() - spaceDownTime) / 1000; // seconds
+          spaceDownTime = 0;
+          let power = Math.min(holdDuration, 1.5); // max power capped to 1.5s hold
+          jump(power);
+        }
+      }
+    });
+
+    // Leaderboard update and display
+    function updateLeaderboard(user, score) {
+      const leaderboardRef = db.collection('leaderboard');
+
+      leaderboardRef.doc(user).set({ score }, { merge: true })
+        .then(() => {
+          fetchLeaderboard();
+        })
+        .catch(err => {
+          console.error('Error updating leaderboard:', err);
+        });
+    }
+
+    function fetchLeaderboard() {
+      const leaderboardRef = db.collection('leaderboard')
+        .orderBy('score', 'desc')
+        .limit(10);
+
+      leaderboardRef.get().then(snapshot => {
+        leaderboardList.innerHTML = '';
+        snapshot.forEach(doc => {
+          const li = document.createElement('li');
+          li.textContent = `${doc.id}: ${doc.data().score}`;
+          leaderboardList.appendChild(li);
+        });
+      });
+    }
+
+    // Update Log Toggle
+    updateLogButton.addEventListener('click', () => {
+      if (updateLogModal.style.display === 'flex') {
+        updateLogModal.style.display = 'none';
+      } else {
+        updateLogModal.style.display = 'flex';
+      }
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+      updateLogModal.style.display = 'none';
+    });
+
+    // Initialize on load
+    checkStoredUser();
+    fetchLeaderboard();
+
   </script>
 </body>
 </html>
